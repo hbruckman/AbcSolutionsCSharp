@@ -14,7 +14,8 @@ public class App
 	{
 		router = new HttpRouter();
 		router.UseRouteMatching();
-		router.MapGet("/", AuthController.LandingPage);
+		router.MapGet("/", AuthController.LandingPageGet);
+		router.UseRouter("/auth", new AuthRouter());
 
 		string host = "http://localhost:8080/";
 		server = new HttpListener();
@@ -29,11 +30,8 @@ public class App
 		while (server.IsListening)
 		{
 			HttpListenerContext ctx = await server.GetContextAsync();
-			HttpListenerRequest req = ctx.Request;
-			HttpListenerResponse res = ctx.Response;
-			Hashtable props = new Hashtable();
 
-			_ = router.HandleAsync(req, res, props, () => Task.CompletedTask);
+			_ = router.HandleContextAsync(ctx);
 		}
 	}
 

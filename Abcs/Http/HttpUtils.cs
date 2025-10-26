@@ -39,20 +39,72 @@ public static class HttpUtils
 		return parameters;
 	}
 
-	public static async Task SendNotFoundResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props)
+	public static string DetectContentType(string input)
 	{
-		await Respond(req, res, props, (int)HttpStatusCode.NotFound, "Not Found", "text/plain", "404 Not Found");
+		string s = input.TrimStart();
+
+		if (s.StartsWith("{") || s.StartsWith("["))
+		{
+			return "application/json";
+		}
+		else if (s.StartsWith("<!DOCTYPE html", StringComparison.OrdinalIgnoreCase) || s.StartsWith("<html", StringComparison.OrdinalIgnoreCase))
+		{
+			return "text/html";
+		}
+		else if (s.StartsWith("<", StringComparison.Ordinal))
+		{
+			return "application/xml";
+		}
+		else
+		{
+			return "text/plain";
+		}
 	}
 
-	public static async Task Respond(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, string statusDescription, string contentType, string body)
+	public static async Task SendOkResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props)
 	{
-		byte[] content = Encoding.UTF8.GetBytes(body);
+		await SendOkResponse(req, res, props, string.Empty, "text/plain");
+	}
+
+	public static async Task SendOkResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content)
+	{
+		await SendOkResponse(req, res, props, content, DetectContentType(content));
+	}
+
+	public static async Task SendOkResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content, string contentType)
+	{
+		await Respond(req, res, props, (int)HttpStatusCode.OK, "OK", content, contentType);
+	}
+
+	public static async Task SendNotFoundResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props)
+	{
+		await SendNotFoundResponse(req, res, props, string.Empty, "text/plain");
+	}
+
+	public static async Task SendNotFoundResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content)
+	{
+		await SendNotFoundResponse(req, res, props, content, DetectContentType(content));
+	}
+
+	public static async Task SendNotFoundResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content, string contentType)
+	{
+		await Respond(req, res, props, (int)HttpStatusCode.NotFound, "Not Found", content, contentType);
+	}
+
+	public static async Task Respond(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, string statusDescription, string content)
+	{
+		await Respond(req, res, props, statusCode, statusDescription, content, DetectContentType(content));
+	}
+
+	public static async Task Respond(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, string statusDescription, string content, string contentType)
+	{
+		byte[] contentBytes = Encoding.UTF8.GetBytes(content);
 		res.StatusCode = statusCode;
 		res.StatusDescription = statusDescription;
 		res.ContentEncoding = Encoding.UTF8;
 		res.ContentType = contentType;
-		res.ContentLength64 = content.LongLength;
-		await res.OutputStream.WriteAsync(content);
+		res.ContentLength64 = contentBytes.LongLength;
+		await res.OutputStream.WriteAsync(contentBytes);
 		res.Close();
 	}
 }
