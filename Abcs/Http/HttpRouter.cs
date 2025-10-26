@@ -34,6 +34,7 @@ public class HttpRouter
 		globalMiddlewares.CopyTo(tmp, 0);
 		middlewares.CopyTo(tmp, globalMiddlewares.Length);
 		globalMiddlewares = tmp;
+
 		return this;
 	}
 
