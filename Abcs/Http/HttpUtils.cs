@@ -4,33 +4,63 @@ using System;
 using System.Collections;
 using System.Net;
 using System.Text;
-using System.IO;
+using System.Text.Json;
+using System.Web;
+using System.Xml.Linq;
 
 public static class HttpUtils
 {
-	public static Hashtable? ParseUrlParams(string reqPath, string routePath)
-	{
-		string[] reqParts = reqPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-		string[] routeParts = routePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+	// https://john:secret@example.com:8080/api/v1/users?id=123&active=true#profile
+	// protocol://user:pass@host:port/path?query#fragment
 
-		if (reqParts.Length != routeParts.Length)
-		{
-			return null;
-		}
+	public static Hashtable ParseUrl(string url)
+	{
+		int i = -1;
+
+		var (scheme, apqf) = (i = url.IndexOf("://")) >= 0 ? (url.Substring(0, i), url.Substring(i + 3)) : ("", url);
+		var (uphp, pqf) = (i = apqf.IndexOf("/")) >= 0 ? (apqf.Substring(0, i), apqf.Substring(i)) : (apqf, "");
+		var (up, hp) = (i = uphp.IndexOf("@")) >= 0 ? (uphp.Substring(0, i), uphp.Substring(i + 1)) : ("", uphp);
+		var (user, pass) = (i = up.IndexOf(":")) >= 0 ? (up.Substring(0, i), up.Substring(0, i + 1)) : (up, "");
+		var (host, port) = (i = hp.IndexOf(":")) >= 0 ? (hp.Substring(0, i), up.Substring(0, i + 1)) : (hp, "");
+		var (pq, fragment) = (i = pqf.IndexOf("#")) >= 0 ? (pqf.Substring(0, i), pqf.Substring(i + 1)) : (pqf, "");
+		var (path, query) = (i = pq.IndexOf("?")) >= 0 ? (pq.Substring(0, i), pq.Substring(i + 1)) : (pq, "");
+		var protocol = scheme.Substring(0, scheme.Length - 3);
+		var parts = new Hashtable();
+
+		parts["scheme"] = scheme;
+		parts["protocol"] = protocol;
+		parts["user"] = user;
+		parts["pass"] = pass;
+		parts["host"] = host;
+		parts["port"] = port;
+		parts["path"] = path;
+		parts["query"] = query;
+		parts["fragment"] = fragment;
+
+		return parts;
+	}
+
+	public static Hashtable? ParseUrlParams(string uPath, string rPath)
+	{
+		string[] uParts = uPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+		string[] rParts = rPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+		if (uParts.Length != rParts.Length) {	return null; }
 
 		Hashtable parameters = new Hashtable();
 
-		for (int i = 0; i < routeParts.Length; i++)
+		for (int i = 0; i < rParts.Length; i++)
 		{
-			string reqPart = reqParts[i];
-			string routePart = routeParts[i];
+			string uPart = uParts[i];
+			string rPart = rParts[i];
 
-			if (routePart.StartsWith(":"))
+			if (rPart.StartsWith(":"))
 			{
-				string paramName = routePart.Substring(1);
-				parameters[paramName] = WebUtility.UrlDecode(reqPart); // RFC 3986 style (%20 for space, not +)
+				string paramName = rPart.Substring(1);
+				parameters[paramName] = HttpUtility.UrlDecode(uPart); // Decodes "+" -> " "
+				//parameters[paramName] = WebUtility.UrlDecode(rPart); // Official but does not
 			}
-			else if (reqPart != routePart)
+			else if (uPart != rPart)
 			{
 				return null;
 			}
@@ -39,9 +69,98 @@ public static class HttpUtils
 		return parameters;
 	}
 
-	public static string DetectContentType(string input)
+	public static Hashtable ParseQueryString(string text, string duplicateSeparator = ",")
 	{
-		string s = input.TrimStart();
+		return ParseFormData(text, duplicateSeparator);
+	}
+
+	public static Hashtable ParseFormData(string text, string duplicateSeparator = ",")
+	{
+		var result = new Hashtable();
+		var pairs = text.Split('&', StringSplitOptions.RemoveEmptyEntries);
+
+		foreach (var pair in pairs)
+		{
+			var kv = pair.Split('=', 2, StringSplitOptions.None);
+			var key = HttpUtility.UrlDecode(kv[0]);
+			var value = kv.Length > 1 ? HttpUtility.UrlDecode(kv[1]) : string.Empty;
+			var oldValue = result[key];
+			result[key] = oldValue == null ? value : oldValue + duplicateSeparator + value;
+		}
+
+		return result;
+	}
+
+	public static async Task CentralizedErrorHandling(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		Console.WriteLine("CentralizedErrorHandling middleware is running.");
+
+		try
+		{
+			await next();
+		}
+		catch (Exception e)
+		{
+			await Respond(req, res, props, (int)HttpStatusCode.InternalServerError, e.ToString(), "text/plain");
+		}
+		finally
+		{
+
+		}
+	}
+
+	public static async Task ParseRequestUrl(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		props["url"] = ParseUrl(req.RawUrl!);
+
+		await next();
+	}
+
+	public static async Task ReadRequestBodyAsBytes(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		using var ms = new MemoryStream();
+		await req.InputStream.CopyToAsync(ms);
+		props["req.body"] = ms.ToArray();
+
+		await next();
+	}
+
+	public static async Task ReadRequestBodyAsText(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		Console.WriteLine("ReadRequestBodyAsText middleware is running.");
+
+		using StreamReader sr = new StreamReader(req.InputStream, Encoding.UTF8);
+		props["req.text"] = await sr.ReadToEndAsync();
+
+		await next();
+	}
+
+	public static async Task ReadRequestBodyAsForm(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		using StreamReader sr = new StreamReader(req.InputStream, Encoding.UTF8);
+		string formData = await sr.ReadToEndAsync();
+		props["req.form"] = ParseFormData(formData);
+
+		await next();
+	}
+
+	public static async Task ReadRequestBodyAsJson(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		props["req.json"] = await JsonDocument.ParseAsync(req.InputStream);
+
+		await next();
+	}
+
+	public static async Task ReadRequestBodyAsXml(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		props["req.xml"] = await XDocument.LoadAsync(req.InputStream, LoadOptions.None, CancellationToken.None);
+
+		await next();
+	}
+
+	public static string DetectContentType(string text)
+	{
+		string s = text.TrimStart();
 
 		if (s.StartsWith("{") || s.StartsWith("["))
 		{
@@ -73,7 +192,7 @@ public static class HttpUtils
 
 	public static async Task SendOkResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content, string contentType)
 	{
-		await Respond(req, res, props, (int)HttpStatusCode.OK, "OK", content, contentType);
+		await Respond(req, res, props, (int)HttpStatusCode.OK, content, contentType);
 	}
 
 	public static async Task SendNotFoundResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props)
@@ -88,19 +207,18 @@ public static class HttpUtils
 
 	public static async Task SendNotFoundResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content, string contentType)
 	{
-		await Respond(req, res, props, (int)HttpStatusCode.NotFound, "Not Found", content, contentType);
+		await Respond(req, res, props, (int)HttpStatusCode.NotFound, content, contentType);
 	}
 
-	public static async Task Respond(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, string statusDescription, string content)
+	public static async Task SendResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, string content)
 	{
-		await Respond(req, res, props, statusCode, statusDescription, content, DetectContentType(content));
+		await Respond(req, res, props, statusCode, content, DetectContentType(content));
 	}
 
-	public static async Task Respond(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, string statusDescription, string content, string contentType)
+	public static async Task Respond(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, string content, string contentType)
 	{
 		byte[] contentBytes = Encoding.UTF8.GetBytes(content);
 		res.StatusCode = statusCode;
-		res.StatusDescription = statusDescription;
 		res.ContentEncoding = Encoding.UTF8;
 		res.ContentType = contentType;
 		res.ContentLength64 = contentBytes.LongLength;
