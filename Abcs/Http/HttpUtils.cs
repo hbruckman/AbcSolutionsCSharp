@@ -101,7 +101,7 @@ public static class HttpUtils
 		}
 		catch (Exception e)
 		{
-			await Respond(req, res, props, (int)HttpStatusCode.InternalServerError, e.ToString(), "text/plain");
+			await SendResponse(req, res, props, (int)HttpStatusCode.InternalServerError, e.ToString(), "text/plain");
 		}
 		finally
 		{
@@ -180,6 +180,65 @@ public static class HttpUtils
 		}
 	}
 
+	public static void AddPaginationHeaders<T>(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, PagedResult<T> pagedResult, int page, int size)
+	{
+		var baseUrl = $"{req.Url!.Scheme}://{req.Url!.Authority}{req.Url!.AbsolutePath}";
+		int totalPages = Math.Max(1, (int) Math.Ceiling((double) pagedResult.TotalCount / size));
+
+		string self = $"{baseUrl}?page={page}&size={size}";
+		string? first = page == 1 ? null : $"{baseUrl}?page={1}&size={size}";
+		string? last = page == totalPages ? null : $"{baseUrl}?page={totalPages}&size={size}";
+		string? prev = page > 1 ? $"{baseUrl}?page={page - 1}&size={size}" : null;
+		string? next = page < totalPages ? $"{baseUrl}?page={page + 1}&size={size}" : null;
+
+		res.Headers["Content-Type"] = "application/json; charset=utf-8";
+		res.Headers["X-Total-Count"] = pagedResult.TotalCount.ToString();
+		res.Headers["X-Page"] = page.ToString();
+		res.Headers["X-Page-Size"] = size.ToString();
+		res.Headers["X-Total-Pages"] = totalPages.ToString();
+
+		// Optional RFC 5988 Link header for discoverability
+
+		var linkParts = new List<string>();
+		if(prev != null) { linkParts.Add($"<{prev}>;  rel=\"prev\""); }
+		if(next != null) { linkParts.Add($"<{next}>;  rel=\"next\""); }
+		if(first != null) { linkParts.Add($"<{first}>; rel=\"first\""); }
+		if(last != null) { linkParts.Add($"<{last}>;  rel=\"last\""); }
+		if(linkParts.Count > 0) { res.Headers["Link"] = string.Join(", ", linkParts); }
+	}
+
+	public static async Task SendPagedResultResponse<T>(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Result<PagedResult<T>> result, int page, int size)
+	{
+		if(result.IsError)
+		{
+			res.Headers["Cache-Control"] = "no-store";
+
+			await HttpUtils.SendResponse(req, res, props, result.StatusCode, result.Error!.ToString()!);
+		}
+		else
+		{
+			var pagedResult = result.Payload!;
+
+			HttpUtils.AddPaginationHeaders(req, res, props, pagedResult, page, size);
+
+			await HttpUtils.SendResponse(req, res, props, result.StatusCode, result.Payload!.ToString()!);
+		}
+	}
+
+	public static async Task SendResultResponse<T>(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Result<T> result)
+	{
+		if(result.IsError)
+		{
+			res.Headers["Cache-Control"] = "no-store";
+			
+			await HttpUtils.SendResponse(req, res, props, result.StatusCode, result.Error!.ToString()!);
+		}
+		else
+		{
+			await HttpUtils.SendResponse(req, res, props, result.StatusCode, result.Payload!.ToString()!);
+		}
+	}
+
 	public static async Task SendOkResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props)
 	{
 		await SendOkResponse(req, res, props, string.Empty, "text/plain");
@@ -192,7 +251,7 @@ public static class HttpUtils
 
 	public static async Task SendOkResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content, string contentType)
 	{
-		await Respond(req, res, props, (int)HttpStatusCode.OK, content, contentType);
+		await SendResponse(req, res, props, (int)HttpStatusCode.OK, content, contentType);
 	}
 
 	public static async Task SendNotFoundResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props)
@@ -207,15 +266,15 @@ public static class HttpUtils
 
 	public static async Task SendNotFoundResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content, string contentType)
 	{
-		await Respond(req, res, props, (int)HttpStatusCode.NotFound, content, contentType);
+		await SendResponse(req, res, props, (int)HttpStatusCode.NotFound, content, contentType);
 	}
 
 	public static async Task SendResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, string content)
 	{
-		await Respond(req, res, props, statusCode, content, DetectContentType(content));
+		await SendResponse(req, res, props, statusCode, content, DetectContentType(content));
 	}
 
-	public static async Task Respond(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, string content, string contentType)
+	public static async Task SendResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, string content, string contentType)
 	{
 		byte[] contentBytes = Encoding.UTF8.GetBytes(content);
 		res.StatusCode = statusCode;
