@@ -1,5 +1,7 @@
 using System.Collections;
+using System.Collections.Specialized;
 using System.Net;
+using System.Web;
 
 namespace Abcs.Http;
 
@@ -7,35 +9,28 @@ public class HttpRouter
 {
 	public const int RESPONSE_NOT_SENT = 777;
 
+	private static ulong requestId = 0;
 	private string basePath;
-	private HttpMiddleware[] globalMiddlewares;
-	private (string, string, HttpMiddleware[])[] routes;
+	private List<HttpMiddleware> middlewares;
+	private List<(string, string, HttpMiddleware[])> routes;
 
 	public HttpRouter()
 	{
 		basePath = string.Empty;
-		globalMiddlewares = [];
+		middlewares = [];
 		routes = [];
-	}
-
-	public string GetBasePath()
-	{
-		return basePath;
-	}
-
-	public void SetBasePath(string basePath)
-	{
-		this.basePath = basePath;
 	}
 
 	public HttpRouter Use(params HttpMiddleware[] middlewares)
 	{
-		HttpMiddleware[] tmp = new HttpMiddleware[globalMiddlewares.Length + middlewares.Length];
-		globalMiddlewares.CopyTo(tmp, 0);
-		middlewares.CopyTo(tmp, globalMiddlewares.Length);
-		globalMiddlewares = tmp;
+		this.middlewares.AddRange(middlewares);
 
 		return this;
+	}
+
+	public HttpRouter UseDefaultResponse()
+	{
+		return Use(DefaultResponse);
 	}
 
 	public HttpRouter UseRouteMatching()
@@ -45,16 +40,15 @@ public class HttpRouter
 
 	public HttpRouter UseRouter(string path, HttpRouter router)
 	{
-		router.SetBasePath(basePath + path);
+		basePath += path;
+
 		return Use(router.HandleAsync);
 	}
 
 	public HttpRouter Map(string method, string path, params HttpMiddleware[] middlewares)
 	{
-		var tmp = new (string, string, HttpMiddleware[])[routes.Length + 1];
-		routes.CopyTo(tmp, 0);
-		tmp[^1] = (method.ToUpperInvariant(), path, middlewares);
-		routes = tmp;
+		routes.Add((method.ToUpperInvariant(), path, middlewares));
+
 		return this;
 	}
 
@@ -85,46 +79,43 @@ public class HttpRouter
 		var props = new Hashtable();
 
 		res.StatusCode = RESPONSE_NOT_SENT;
+		props["req.id"] = ++requestId;
 
 		await HandleAsync(req, res, props, () => Task.CompletedTask);
-
-		if (res.StatusCode == RESPONSE_NOT_SENT)
-		{
-			await HttpUtils.SendNotFoundResponse(req, res, props);
-		}
-
-		Console.WriteLine($"Response status: {res.StatusCode}");
 	}
 
 	private async Task HandleAsync(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
 	{
-		Console.WriteLine(this.GetType().Name);
-		Console.WriteLine($"Handling request: {req.HttpMethod} {req.Url!.AbsolutePath}");
+		Func<Task> preRouteMatchMiddlewarePipeline = GenerateMiddlewarePipeline(req, res, props, middlewares);
 
-		Func<Task> preRouteMatchMiddlewarePipeline = GenerateMiddlewarePipeline(req, res, props, globalMiddlewares);
 		await preRouteMatchMiddlewarePipeline();
 
 		await next();
 	}
 
+	private async Task DefaultResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		await next();
+
+		if(res.StatusCode == RESPONSE_NOT_SENT)
+		{
+			res.StatusCode = (int) HttpStatusCode.NotFound;
+			res.Close();
+		}
+	}
+
 	private async Task RouteMatchingMiddleware(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
 	{
-		Console.WriteLine($"basePath Match: {(string.IsNullOrEmpty(basePath) || req.Url!.AbsolutePath.StartsWith(basePath))}");
-
 		if (string.IsNullOrEmpty(basePath) || req.Url!.AbsolutePath.StartsWith(basePath))
 		{
 			foreach (var (method, path, middlewares) in routes)
 			{
-				Hashtable? parameters;
+				NameValueCollection? parameters;
 
-				Console.WriteLine($"  req: {req.HttpMethod} {req.Url!.AbsolutePath}");
-				Console.WriteLine($"route: {method} {basePath + path}");
-				Console.WriteLine($"match: {req.HttpMethod == method && (parameters = HttpUtils.ParseUrlParams(req.Url!.AbsolutePath, basePath + path)) != null}");
-
-				if (req.HttpMethod == method && (parameters = HttpUtils.ParseUrlParams(req.Url!.AbsolutePath, basePath + path)) != null)
+				if (req.HttpMethod == method && (parameters = ParseUrlParams(req.Url!.AbsolutePath, basePath + path)) != null)
 				{
 					props["urlParams"] = parameters;
-					Func<Task> postRouteMatchMiddlewarePipeline = GenerateMiddlewarePipeline(req, res, props, middlewares);
+					Func<Task> postRouteMatchMiddlewarePipeline = GenerateMiddlewarePipeline(req, res, props, middlewares.ToList());
 					await postRouteMatchMiddlewarePipeline();
 					break;
 				}
@@ -134,14 +125,43 @@ public class HttpRouter
 		await next();
 	}
 
-	private Func<Task> GenerateMiddlewarePipeline(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, HttpMiddleware[] middlewares)
+	private static NameValueCollection? ParseUrlParams(string uPath, string rPath)
+	{
+		string[] uParts = uPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+		string[] rParts = rPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+		if(uParts.Length != rParts.Length) { return null; }
+
+		var parameters = new NameValueCollection();
+
+		for(int i = 0; i < rParts.Length; i++)
+		{
+			string uPart = uParts[i];
+			string rPart = rParts[i];
+
+			if(rPart.StartsWith(":"))
+			{
+				string paramName = rPart.Substring(1);
+				parameters[paramName] = HttpUtility.UrlDecode(uPart); // Decodes "+" -> " "
+				//parameters[paramName] = WebUtility.UrlDecode(rPart); // Official but does not
+			}
+			else if(uPart != rPart)
+			{
+				return null;
+			}
+		}
+
+		return parameters;
+	}
+
+	private Func<Task> GenerateMiddlewarePipeline(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, List<HttpMiddleware> middlewares)
 	{
 		int index = -1;
-		Func<Task> next = null!;
+		Func<Task> next = () => Task.CompletedTask;
 		next = async () =>
 		{
 			index++;
-			if (index < middlewares.Length)
+			if (index < middlewares.Count && res.StatusCode == RESPONSE_NOT_SENT)
 			{
 				await middlewares[index](req, res, props, next);
 			}

@@ -2,84 +2,68 @@ namespace Abcs.Http;
 
 using System;
 using System.Collections;
+using System.Collections.Specialized;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Web;
 using System.Xml.Linq;
 
 public static class HttpUtils
 {
-	// https://john:secret@example.com:8080/api/v1/users?id=123&active=true#profile
-	// protocol://user:pass@host:port/path?query#fragment
-
-	public static Hashtable ParseUrl(string url)
+	public static NameValueCollection ParseUrl(string url)
 	{
 		int i = -1;
 
 		var (scheme, apqf) = (i = url.IndexOf("://")) >= 0 ? (url.Substring(0, i), url.Substring(i + 3)) : ("", url);
-		var (uphp, pqf) = (i = apqf.IndexOf("/")) >= 0 ? (apqf.Substring(0, i), apqf.Substring(i)) : (apqf, "");
-		var (up, hp) = (i = uphp.IndexOf("@")) >= 0 ? (uphp.Substring(0, i), uphp.Substring(i + 1)) : ("", uphp);
-		var (user, pass) = (i = up.IndexOf(":")) >= 0 ? (up.Substring(0, i), up.Substring(0, i + 1)) : (up, "");
-		var (host, port) = (i = hp.IndexOf(":")) >= 0 ? (hp.Substring(0, i), up.Substring(0, i + 1)) : (hp, "");
+		var (auth, pqf) = (i = apqf.IndexOf("/")) >= 0 ? (apqf.Substring(0, i), apqf.Substring(i)) : (apqf, "");
+		var (up, hp) = (i = auth.IndexOf("@")) >= 0 ? (auth.Substring(0, i), auth.Substring(i + 1)) : ("", auth);
+		var (user, pass) = (i = up.IndexOf(":")) >= 0 ? (up.Substring(0, i), up.Substring(i + 1)) : (up, "");
+		var (host, port) = (i = hp.IndexOf(":")) >= 0 ? (hp.Substring(0, i), hp.Substring(i + 1)) : (hp, "");
 		var (pq, fragment) = (i = pqf.IndexOf("#")) >= 0 ? (pqf.Substring(0, i), pqf.Substring(i + 1)) : (pqf, "");
 		var (path, query) = (i = pq.IndexOf("?")) >= 0 ? (pq.Substring(0, i), pq.Substring(i + 1)) : (pq, "");
-		var protocol = scheme.Substring(0, scheme.Length - 3);
-		var parts = new Hashtable();
 
-		parts["scheme"] = scheme;
-		parts["protocol"] = protocol;
-		parts["user"] = user;
-		parts["pass"] = pass;
-		parts["host"] = host;
-		parts["port"] = port;
-		parts["path"] = path;
-		parts["query"] = query;
-		parts["fragment"] = fragment;
+		var parts = new NameValueCollection();
+
+		// https://john:abc123@site.com:8080/api/v1/users/3?q=0&active=true#bio
+		// scheme://user:pass@host:port/path?query#fragment
+		// Splits:1     4    3    5    2    7     6
+
+		// 1 scheme                     user:pass@host:port/path?query#fragment
+		// 2 user:pass@host:port (auth) /path?query#fragment
+		// 3 user:pass                  host:port
+		// 4 user                       pass
+		// 5 host                       port
+		// 6 /path?query                fragment
+		// 7 /path                      query
+
+		parts["scheme"] = scheme;     // https
+		parts["auth"] = auth;         // john:abc123@site.com:8080
+		parts["user"] = user;         // john
+		parts["pass"] = pass;         // abc123
+		parts["host"] = host;         // site.com
+		parts["port"] = port;         // 8080
+		parts["path"] = path;         // /api/vi/users/3
+		parts["query"] = query;       // q=0&active=true
+		parts["fragment"] = fragment; // bio
 
 		return parts;
 	}
 
-	public static Hashtable? ParseUrlParams(string uPath, string rPath)
+	public static NameValueCollection ParseQueryString(string text, string duplicateSeparator = ",")
 	{
-		string[] uParts = uPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-		string[] rParts = rPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+		if(text.StartsWith('?')) { text = text.Substring(1); }
 
-		if (uParts.Length != rParts.Length) {	return null; }
-
-		Hashtable parameters = new Hashtable();
-
-		for (int i = 0; i < rParts.Length; i++)
-		{
-			string uPart = uParts[i];
-			string rPart = rParts[i];
-
-			if (rPart.StartsWith(":"))
-			{
-				string paramName = rPart.Substring(1);
-				parameters[paramName] = HttpUtility.UrlDecode(uPart); // Decodes "+" -> " "
-				//parameters[paramName] = WebUtility.UrlDecode(rPart); // Official but does not
-			}
-			else if (uPart != rPart)
-			{
-				return null;
-			}
-		}
-
-		return parameters;
-	}
-
-	public static Hashtable ParseQueryString(string text, string duplicateSeparator = ",")
-	{
 		return ParseFormData(text, duplicateSeparator);
 	}
 
-	public static Hashtable ParseFormData(string text, string duplicateSeparator = ",")
+	public static NameValueCollection ParseFormData(string text, string duplicateSeparator = ",")
 	{
-		var result = new Hashtable();
+		var result = new NameValueCollection();
 		var pairs = text.Split('&', StringSplitOptions.RemoveEmptyEntries);
 
-		foreach (var pair in pairs)
+		foreach(var pair in pairs)
 		{
 			var kv = pair.Split('=', 2, StringSplitOptions.None);
 			var key = HttpUtility.UrlDecode(kv[0]);
@@ -91,27 +75,17 @@ public static class HttpUtils
 		return result;
 	}
 
-	public static async Task CentralizedErrorHandling(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
-	{
-		Console.WriteLine("CentralizedErrorHandling middleware is running.");
-
-		try
-		{
-			await next();
-		}
-		catch (Exception e)
-		{
-			await SendResponse(req, res, props, (int)HttpStatusCode.InternalServerError, e.ToString(), "text/plain");
-		}
-		finally
-		{
-
-		}
-	}
-
 	public static async Task ParseRequestUrl(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
 	{
-		props["url"] = ParseUrl(req.RawUrl!);
+		props["req.url"] = ParseUrl(req.Url!.OriginalString);
+
+		await next();
+	}
+
+	public static async Task ParseRequestQueryString(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		var url = (NameValueCollection?) props["req.url"];
+		props["req.query"] = ParseQueryString(url?["query"] ?? req.Url!.Query);
 
 		await next();
 	}
@@ -127,9 +101,8 @@ public static class HttpUtils
 
 	public static async Task ReadRequestBodyAsText(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
 	{
-		Console.WriteLine("ReadRequestBodyAsText middleware is running.");
-
-		using StreamReader sr = new StreamReader(req.InputStream, Encoding.UTF8);
+		var encoding = req.ContentEncoding ?? Encoding.UTF8;
+		using StreamReader sr = new StreamReader(req.InputStream, encoding);
 		props["req.text"] = await sr.ReadToEndAsync();
 
 		await next();
@@ -146,7 +119,7 @@ public static class HttpUtils
 
 	public static async Task ReadRequestBodyAsJson(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
 	{
-		props["req.json"] = await JsonDocument.ParseAsync(req.InputStream);
+		props["req.json"] = (await JsonNode.ParseAsync(req.InputStream))!.AsObject();
 
 		await next();
 	}
@@ -162,21 +135,123 @@ public static class HttpUtils
 	{
 		string s = text.TrimStart();
 
-		if (s.StartsWith("{") || s.StartsWith("["))
+		if(s.StartsWith("{") || s.StartsWith("["))
 		{
 			return "application/json";
 		}
-		else if (s.StartsWith("<!DOCTYPE html", StringComparison.OrdinalIgnoreCase) || s.StartsWith("<html", StringComparison.OrdinalIgnoreCase))
+		else if(s.StartsWith("<!DOCTYPE html", StringComparison.OrdinalIgnoreCase) || s.StartsWith("<html", StringComparison.OrdinalIgnoreCase))
 		{
 			return "text/html";
 		}
-		else if (s.StartsWith("<", StringComparison.Ordinal))
+		else if(s.StartsWith("<", StringComparison.Ordinal))
 		{
 			return "application/xml";
 		}
 		else
 		{
 			return "text/plain";
+		}
+	}
+
+	public static async Task SendOkResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props)
+	{
+		await SendOkResponse(req, res, props, string.Empty, "text/plain");
+	}
+
+	public static async Task SendOkResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content)
+	{
+		await SendOkResponse(req, res, props, content, DetectContentType(content));
+	}
+
+	public static async Task SendOkResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content, string contentType)
+	{
+		await SendResponse(req, res, props, (int) HttpStatusCode.OK, content, contentType);
+	}
+
+	public static async Task SendNotFoundResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props)
+	{
+		await SendNotFoundResponse(req, res, props, string.Empty, "text/plain");
+	}
+
+	public static async Task SendNotFoundResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content)
+	{
+		await SendNotFoundResponse(req, res, props, content, DetectContentType(content));
+	}
+
+	public static async Task SendNotFoundResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content, string contentType)
+	{
+		await SendResponse(req, res, props, (int) HttpStatusCode.NotFound, content, contentType);
+	}
+
+	public static async Task SendResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, string content)
+	{
+		await SendResponse(req, res, props, statusCode, content, DetectContentType(content));
+	}
+
+	public static async Task SendResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, string content, string contentType)
+	{
+		await SendResponse(req, res, props, statusCode, Encoding.UTF8.GetBytes(content), DetectContentType(content));
+	}
+
+	public static async Task SendResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, byte[] content, string contentType)
+	{
+		res.StatusCode = statusCode;
+		res.ContentEncoding = Encoding.UTF8;
+		res.ContentType = contentType;
+		res.ContentLength64 = content.LongLength;
+		await res.OutputStream.WriteAsync(content);
+		res.Close();
+	}
+
+	public static async Task CentralizedErrorHandling(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		try
+		{
+			await next();
+		}
+		catch(Exception e)
+		{
+			int code = (int) HttpStatusCode.InternalServerError;
+			string message = Environment.GetEnvironmentVariable("DEPLOYMENT_MODE") == "development"
+				? e.ToString()
+				: "An unexpected error occurred.";
+
+			await SendResponse(req, res, props, code, message, "text/plain");
+		}
+	}
+
+	public static async Task StructuredLogging(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		var requestId = props["req.id"]?.ToString() ?? Guid.NewGuid().ToString("n").Substring(0, 12);
+		var startUtc = DateTime.UtcNow;
+		var method = req.HttpMethod ?? "UNKNOWN";
+		var url = req.Url!.OriginalString ?? req.Url!.ToString();
+		var remote = req.RemoteEndPoint.ToString() ?? "unknown";
+
+		res.Headers["X-Request-Id"] = requestId;
+
+		try
+		{
+			await next();
+		}
+		finally
+		{
+			var duration = (DateTime.UtcNow - startUtc).TotalNanoseconds;
+
+			var record = new
+			{
+				timestamp = startUtc.ToString("o"),
+				requestId,
+				method,
+				url,
+				remote,
+				statusCode = res.StatusCode,
+				contentType = res.ContentType,
+				contentLength = res.ContentLength64,
+				duration
+			};
+
+			Console.WriteLine(JsonSerializer.Serialize(record, JsonUtils.DefaultOptions));
 		}
 	}
 
@@ -230,58 +305,12 @@ public static class HttpUtils
 		if(result.IsError)
 		{
 			res.Headers["Cache-Control"] = "no-store";
-			
+
 			await HttpUtils.SendResponse(req, res, props, result.StatusCode, result.Error!.ToString()!);
 		}
 		else
 		{
 			await HttpUtils.SendResponse(req, res, props, result.StatusCode, result.Payload!.ToString()!);
 		}
-	}
-
-	public static async Task SendOkResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props)
-	{
-		await SendOkResponse(req, res, props, string.Empty, "text/plain");
-	}
-
-	public static async Task SendOkResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content)
-	{
-		await SendOkResponse(req, res, props, content, DetectContentType(content));
-	}
-
-	public static async Task SendOkResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content, string contentType)
-	{
-		await SendResponse(req, res, props, (int)HttpStatusCode.OK, content, contentType);
-	}
-
-	public static async Task SendNotFoundResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props)
-	{
-		await SendNotFoundResponse(req, res, props, string.Empty, "text/plain");
-	}
-
-	public static async Task SendNotFoundResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content)
-	{
-		await SendNotFoundResponse(req, res, props, content, DetectContentType(content));
-	}
-
-	public static async Task SendNotFoundResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, string content, string contentType)
-	{
-		await SendResponse(req, res, props, (int)HttpStatusCode.NotFound, content, contentType);
-	}
-
-	public static async Task SendResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, string content)
-	{
-		await SendResponse(req, res, props, statusCode, content, DetectContentType(content));
-	}
-
-	public static async Task SendResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, int statusCode, string content, string contentType)
-	{
-		byte[] contentBytes = Encoding.UTF8.GetBytes(content);
-		res.StatusCode = statusCode;
-		res.ContentEncoding = Encoding.UTF8;
-		res.ContentType = contentType;
-		res.ContentLength64 = contentBytes.LongLength;
-		await res.OutputStream.WriteAsync(contentBytes);
-		res.Close();
 	}
 }
