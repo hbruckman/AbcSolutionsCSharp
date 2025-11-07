@@ -90,11 +90,11 @@ public static class HttpUtils
 		await next();
 	}
 
-	public static async Task ReadRequestBodyAsBytes(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	public static async Task ReadRequestBodyAsBlob(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
 	{
 		using var ms = new MemoryStream();
 		await req.InputStream.CopyToAsync(ms);
-		props["req.body"] = ms.ToArray();
+		props["req.blob"] = ms.ToArray();
 
 		await next();
 	}

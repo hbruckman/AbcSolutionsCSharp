@@ -28,23 +28,6 @@ public class HttpRouter
 		return this;
 	}
 
-	public HttpRouter UseDefaultResponse()
-	{
-		return Use(DefaultResponse);
-	}
-
-	public HttpRouter UseRouteMatching()
-	{
-		return Use(RouteMatchingMiddleware);
-	}
-
-	public HttpRouter UseRouter(string path, HttpRouter router)
-	{
-		basePath += path;
-
-		return Use(router.HandleAsync);
-	}
-
 	public HttpRouter Map(string method, string path, params HttpMiddleware[] middlewares)
 	{
 		routes.Add((method.ToUpperInvariant(), path, middlewares));
@@ -86,11 +69,39 @@ public class HttpRouter
 
 	private async Task HandleAsync(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
 	{
-		Func<Task> preRouteMatchMiddlewarePipeline = GenerateMiddlewarePipeline(req, res, props, middlewares);
+		Func<Task> globalMiddlewarePipeline = GenerateMiddlewarePipeline(req, res, props, middlewares);
 
-		await preRouteMatchMiddlewarePipeline();
+		await globalMiddlewarePipeline();
 
 		await next();
+	}
+
+	public HttpRouter UseRouter(string path, HttpRouter router)
+	{
+		basePath += path;
+
+		return Use(router.HandleAsync);
+	}
+
+	private Func<Task> GenerateMiddlewarePipeline(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, List<HttpMiddleware> middlewares)
+	{
+		int index = -1;
+		Func<Task> next = () => Task.CompletedTask;
+		next = async () =>
+		{
+			index++;
+			if(index < middlewares.Count && res.StatusCode == RESPONSE_NOT_SENT)
+			{
+				await middlewares[index](req, res, props, next);
+			}
+		};
+
+		return next;
+	}
+
+	public HttpRouter UseDefaultResponse()
+	{
+		return Use(DefaultResponse);
 	}
 
 	private async Task DefaultResponse(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
@@ -104,21 +115,43 @@ public class HttpRouter
 		}
 	}
 
-	private async Task RouteMatchingMiddleware(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	public HttpRouter UseSimpleRouteMatching()
 	{
-		if (string.IsNullOrEmpty(basePath) || req.Url!.AbsolutePath.StartsWith(basePath))
-		{
-			foreach (var (method, path, middlewares) in routes)
-			{
-				NameValueCollection? parameters;
+		return Use(SimpleRouteMatching);
+	}
 
-				if (req.HttpMethod == method && (parameters = ParseUrlParams(req.Url!.AbsolutePath, basePath + path)) != null)
-				{
-					props["urlParams"] = parameters;
-					Func<Task> postRouteMatchMiddlewarePipeline = GenerateMiddlewarePipeline(req, res, props, middlewares.ToList());
-					await postRouteMatchMiddlewarePipeline();
-					break;
-				}
+	private async Task SimpleRouteMatching(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		foreach(var (method, path, middlewares) in routes)
+		{
+			if(req.HttpMethod == method && string.Equals(req.Url!.AbsolutePath, basePath + path))
+			{
+				Func<Task> routeMiddlewarePipeline = GenerateMiddlewarePipeline(req, res, props, middlewares.ToList());
+				await routeMiddlewarePipeline();
+				break; // or return; // To short-circuit global pipeline.
+			}
+		}
+
+		await next();
+	}
+
+	public HttpRouter UseParametrizedRouteMatching()
+	{
+		return Use(ParametrizedRouteMatching);
+	}
+
+	private async Task ParametrizedRouteMatching(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		foreach(var (method, path, middlewares) in routes)
+		{
+			NameValueCollection? parameters;
+
+			if(req.HttpMethod == method && (parameters = ParseUrlParams(req.Url!.AbsolutePath, basePath + path)) != null)
+			{
+				props["urlParams"] = parameters;
+				Func<Task> routeMiddlewarePipeline = GenerateMiddlewarePipeline(req, res, props, middlewares.ToList());
+				await routeMiddlewarePipeline();
+				break; // or return; // To short-circuit global pipeline.
 			}
 		}
 
@@ -142,8 +175,8 @@ public class HttpRouter
 			if(rPart.StartsWith(":"))
 			{
 				string paramName = rPart.Substring(1);
-				parameters[paramName] = HttpUtility.UrlDecode(uPart); // Decodes "+" -> " "
-				//parameters[paramName] = WebUtility.UrlDecode(rPart); // Official but does not
+				parameters[paramName] = HttpUtility.UrlDecode(uPart);
+				// parameters[paramName] = WebUtility.UrlDecode(rPart); // Does not decodes "+" to " "
 			}
 			else if(uPart != rPart)
 			{
@@ -152,21 +185,5 @@ public class HttpRouter
 		}
 
 		return parameters;
-	}
-
-	private Func<Task> GenerateMiddlewarePipeline(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, List<HttpMiddleware> middlewares)
-	{
-		int index = -1;
-		Func<Task> next = () => Task.CompletedTask;
-		next = async () =>
-		{
-			index++;
-			if (index < middlewares.Count && res.StatusCode == RESPONSE_NOT_SENT)
-			{
-				await middlewares[index](req, res, props, next);
-			}
-		};
-
-		return next;
 	}
 }
