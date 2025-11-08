@@ -78,7 +78,7 @@ public class HttpRouter
 
 	public HttpRouter UseRouter(string path, HttpRouter router)
 	{
-		basePath += path;
+		router.basePath = this.basePath + path;
 
 		return Use(router.HandleAsync);
 	}
