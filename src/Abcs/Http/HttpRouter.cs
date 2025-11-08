@@ -158,7 +158,7 @@ public class HttpRouter
 		await next();
 	}
 
-	private static NameValueCollection? ParseUrlParams(string uPath, string rPath)
+	public static NameValueCollection? ParseUrlParams(string uPath, string rPath)
 	{
 		string[] uParts = uPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
 		string[] rParts = rPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);

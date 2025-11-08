@@ -22,7 +22,6 @@ public static class Configuration
 		foreach(var path in paths)
 		{
 			var file = Path.Combine(basePath, path);
-			Console.WriteLine(file);
 			
 			if(File.Exists(file))
 			{

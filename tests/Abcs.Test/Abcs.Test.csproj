@@ -6,11 +6,6 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
-  
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <StartupObject>Abcs.Tests.Program</StartupObject>
-  </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.2" />
@@ -24,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Abcs\Abcs.csproj" />
+    <ProjectReference Include="..\..\src\Abcs\Abcs.csproj" />
   </ItemGroup>
 
 </Project>
