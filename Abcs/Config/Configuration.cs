@@ -6,16 +6,16 @@ namespace Abcs.Config;
 
 public static class Configuration
 {
-	private static NameValueCollection? appConfiguration;
+	private static StringDictionary? appConfiguration;
 
-	private static NameValueCollection GetAppConfiguration()
+	private static StringDictionary GetAppConfiguration()
 	{
 		return appConfiguration == null ? appConfiguration = LoadAppConfiguration() : appConfiguration;
 	}
 
-	private static NameValueCollection LoadAppConfiguration()
+	private static StringDictionary LoadAppConfiguration()
 	{
-		var cfg = new NameValueCollection();
+		var cfg = new StringDictionary();
 		var basePath = Directory.GetCurrentDirectory();
 		var paths = new string[] { "appsettings.default.cfg", "appsettings.cfg" };
 
@@ -26,18 +26,23 @@ public static class Configuration
 			
 			if(File.Exists(file))
 			{
-				cfg.Add(LoadConfigurationFile(file));
+				var tmp = LoadConfigurationFile(file);
+
+				foreach(string k in tmp.Keys)
+				{
+					cfg[k] = tmp[k];
+				}
 			}
 		}
 
 		return cfg;
 	}
 
-	public static NameValueCollection LoadConfigurationFile(string file)
+	public static StringDictionary LoadConfigurationFile(string file)
 	{
 		string[] lines = File.ReadAllLines(file);
 
-		var cfg = new NameValueCollection();
+		var cfg = new StringDictionary();
 
 		for(int i = 0; i < lines.Length; i++)
 		{
