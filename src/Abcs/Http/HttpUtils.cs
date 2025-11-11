@@ -301,7 +301,7 @@ public static class HttpUtils
 			else
 			{
 				string[] allowedOrigins = Configuration
-					.Get("allowed.origins", string.Empty)
+					.Get("allowed.origins", string.Empty)!
 					.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
 
 				if(allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
