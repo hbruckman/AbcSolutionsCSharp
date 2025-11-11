@@ -49,7 +49,7 @@ public static class JsonUtils
 			var pagedResult = result.Payload!;
 			var jsonApiPayload = JsonUtils.GetPaginatedResponse(req, res, props, pagedResult, page, size);
 
-			HttpUtils.AddPaginationHeaders(req, res, props, pagedResult, page, size);
+			HttpUtils.AddResponsePaginationHeaders(req, res, props, pagedResult, page, size);
 
 			await HttpUtils.SendResponse(req, res, props, result.StatusCode, JsonSerializer.Serialize(jsonApiPayload, JsonUtils.DefaultOptions));
 		}

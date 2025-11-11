@@ -212,7 +212,7 @@ public static class HttpUtils
 		catch(Exception e)
 		{
 			int code = (int) HttpStatusCode.InternalServerError;
-			string message = Environment.GetEnvironmentVariable("DEPLOYMENT_MODE") == "production"
+			string message = Environment.GetEnvironmentVariable("DEPLOYMENT_MODE") == "Production"
 				? "An unexpected error occurred."
 				: e.ToString();
 
@@ -255,7 +255,7 @@ public static class HttpUtils
 		}
 	}
 
-	public static void AddPaginationHeaders<T>(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, PagedResult<T> pagedResult, int page, int size)
+	public static void AddResponsePaginationHeaders<T>(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, PagedResult<T> pagedResult, int page, int size)
 	{
 		var baseUrl = $"{req.Url!.Scheme}://{req.Url!.Authority}{req.Url!.AbsolutePath}";
 		int totalPages = Math.Max(1, (int) Math.Ceiling((double) pagedResult.TotalCount / size));
@@ -282,6 +282,46 @@ public static class HttpUtils
 		if(linkParts.Count > 0) { res.Headers["Link"] = string.Join(", ", linkParts); }
 	}
 
+	public static async Task AddResponseCorsHeaders(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		bool isProductionMode = Environment.GetEnvironmentVariable("DEPLOYMENT_MODE") == "Production";
+		string? origin = req.Headers["Origin"];
+
+		if(!string.IsNullOrEmpty(origin))
+		{
+			if(!isProductionMode)
+			{
+				// Allow everything during development
+				res.AddHeader("Access-Control-Allow-Origin", origin);
+				res.AddHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+				res.AddHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+				res.AddHeader("Access-Control-Allow-Credentials", "true");
+			}
+			else
+			{
+				string[] allowedOrigins = Configuration
+					.Get("allowed.origins", string.Empty)
+					.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+				if(allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+				{
+					res.AddHeader("Access-Control-Allow-Origin", origin);
+					res.AddHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+					res.AddHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+					res.AddHeader("Access-Control-Allow-Credentials", "true");
+				}
+			}
+		}
+
+		if(req.HttpMethod.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+		{
+			res.StatusCode = (int) HttpStatusCode.NoContent;
+			res.OutputStream.Close();
+		}
+
+		await next();
+	}
+
 	public static async Task SendPagedResultResponse<T>(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Result<PagedResult<T>> result, int page, int size)
 	{
 		if(result.IsError)
@@ -294,7 +334,7 @@ public static class HttpUtils
 		{
 			var pagedResult = result.Payload!;
 
-			HttpUtils.AddPaginationHeaders(req, res, props, pagedResult, page, size);
+			HttpUtils.AddResponsePaginationHeaders(req, res, props, pagedResult, page, size);
 
 			await HttpUtils.SendResponse(req, res, props, result.StatusCode, result.Payload!.ToString()!);
 		}
