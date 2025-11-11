@@ -1,8 +1,8 @@
+namespace Abcs.Config;
+
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Globalization;
-
-namespace Abcs.Config;
 
 public static class Configuration
 {

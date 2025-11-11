@@ -47,7 +47,7 @@ public class RouterIntegrationTests
 
                 var paged = new PagedResult<int>(total, values);
 
-                HttpUtils.AddPaginationHeaders(req, res, props, paged, page, size);
+                HttpUtils.AddResponsePaginationHeaders(req, res, props, paged, page, size);
 
                 var payload = JsonSerializer.Serialize(values);
                 await HttpUtils.SendResponse(req, res, props, (int)HttpStatusCode.OK, payload, "application/json");
