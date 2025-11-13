@@ -357,9 +357,11 @@ public static class HttpUtils
 
 	public static async Task ServeStaticFiles(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
 	{
-		string rootDir = Configuration.Get("root.dir", "wwwroot")!;
+		string rootDir = Configuration.Get("root.dir", Directory.GetCurrentDirectory())!;
 		string urlPath = req.Url!.AbsolutePath.TrimStart('/');
 		string filePath = Path.Combine(rootDir, urlPath.Replace('/', Path.DirectorySeparatorChar));
+
+		Console.WriteLine(filePath);
 
 		if(File.Exists(filePath))
 		{
