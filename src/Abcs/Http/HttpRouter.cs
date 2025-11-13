@@ -64,7 +64,19 @@ public class HttpRouter
 		res.StatusCode = RESPONSE_NOT_SENT;
 		props["req.id"] = ++requestId;
 
-		await HandleAsync(req, res, props, () => Task.CompletedTask);
+		try
+		{
+			await HandleAsync(req, res, props, () => Task.CompletedTask);
+		}
+		finally
+		{
+			if(res.StatusCode == RESPONSE_NOT_SENT)
+			{
+				res.StatusCode = (int) HttpStatusCode.NotImplemented;
+			}
+
+			res.Close();
+		}
 	}
 
 	private async Task HandleAsync(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)

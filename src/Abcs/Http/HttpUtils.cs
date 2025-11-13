@@ -354,4 +354,44 @@ public static class HttpUtils
 			await HttpUtils.SendResponse(req, res, props, result.StatusCode, result.Payload!.ToString()!);
 		}
 	}
+
+	public static async Task ServeStaticFiles(HttpListenerRequest req, HttpListenerResponse res, Hashtable props, Func<Task> next)
+	{
+		string rootDir = Configuration.Get("root.dir", "wwwroot")!;
+		string urlPath = req.Url!.AbsolutePath.TrimStart('/');
+		string filePath = Path.Combine(rootDir, urlPath.Replace('/', Path.DirectorySeparatorChar));
+
+		if(File.Exists(filePath))
+		{
+			using var fs = File.OpenRead(filePath);
+			res.StatusCode = (int) HttpStatusCode.OK;
+			res.ContentType = GetMimeType(filePath);
+			res.ContentLength64 = fs.Length;
+			await fs.CopyToAsync(res.OutputStream);
+			res.Close();
+		}
+
+		await next();
+	}
+
+	private static string GetMimeType(string filePath)
+	{
+		string ext = Path.GetExtension(filePath).ToLowerInvariant();
+		return ext switch
+		{
+			".html" => "text/html; charset=utf-8",
+			".htm" => "text/html; charset=utf-8",
+			".css" => "text/css",
+			".js" => "application/javascript",
+			".json" => "application/json",
+			".png" => "image/png",
+			".jpg" => "image/jpeg",
+			".jpeg" => "image/jpeg",
+			".gif" => "image/gif",
+			".svg" => "image/svg+xml",
+			".ico" => "image/x-icon",
+			".txt" => "text/plain; charset=utf-8",
+			_ => "application/octet-stream"
+		};
+	}
 }
