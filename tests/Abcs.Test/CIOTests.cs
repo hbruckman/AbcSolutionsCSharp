@@ -7,9 +7,9 @@ public class CIOTests
 {
 	// ---------- Helpers ----------
 
-	private static string[,,] GetBuffer(CIO cio)
+	private static string[,,] GetBuffer(ConsoleIO cio)
 	{
-		var field = typeof(CIO).GetField("buffer",
+		var field = typeof(ConsoleIO).GetField("buffer",
 				BindingFlags.NonPublic | BindingFlags.Instance);
 		Assert.NotNull(field);
 
@@ -19,13 +19,13 @@ public class CIOTests
 		return (string[,,]) value!;
 	}
 
-	private static (int rows, int cols, int layers) GetDimensions(CIO cio)
+	private static (int rows, int cols, int layers) GetDimensions(ConsoleIO cio)
 	{
-		var rowsField = typeof(CIO).GetField("rows",
+		var rowsField = typeof(ConsoleIO).GetField("rows",
 				BindingFlags.NonPublic | BindingFlags.Instance);
-		var colsField = typeof(CIO).GetField("cols",
+		var colsField = typeof(ConsoleIO).GetField("cols",
 				BindingFlags.NonPublic | BindingFlags.Instance);
-		var layersField = typeof(CIO).GetField("layers",
+		var layersField = typeof(ConsoleIO).GetField("layers",
 				BindingFlags.NonPublic | BindingFlags.Instance);
 
 		Assert.NotNull(rowsField);
@@ -39,13 +39,13 @@ public class CIOTests
 		return (rows, cols, layers);
 	}
 
-	private static (int row, int col, int layer) GetCursor(CIO cio)
+	private static (int row, int col, int layer) GetCursor(ConsoleIO cio)
 	{
-		var rowField = typeof(CIO).GetField("cursorRow",
+		var rowField = typeof(ConsoleIO).GetField("cursorRow",
 				BindingFlags.NonPublic | BindingFlags.Instance);
-		var colField = typeof(CIO).GetField("cursorCol",
+		var colField = typeof(ConsoleIO).GetField("cursorCol",
 				BindingFlags.NonPublic | BindingFlags.Instance);
-		var layerField = typeof(CIO).GetField("cursorLayer",
+		var layerField = typeof(ConsoleIO).GetField("cursorLayer",
 				BindingFlags.NonPublic | BindingFlags.Instance);
 
 		Assert.NotNull(rowField);
@@ -103,18 +103,18 @@ public class CIOTests
 	[InlineData(ConsoleColor.White, "\x1b[97m")]
 	public void ConsoleColorToAnsiForeground_MapsKnownColors(ConsoleColor color, string expected)
 	{
-		var result = CIO.ConsoleColorToAnsiForeground(color);
+		var result = ConsoleIO.ConsoleColorToAnsiForeground(color);
 		Assert.Equal(expected, result);
 	}
 
 	[Fact]
 	public void ConsoleColorToAnsiForeground_NullOrUnknown_ReturnsReset()
 	{
-		Assert.Equal(CIO.RESET, CIO.ConsoleColorToAnsiForeground(null));
+		Assert.Equal(ConsoleIO.RESET, ConsoleIO.ConsoleColorToAnsiForeground(null));
 
 		// Unknown value
 		var unknown = (ConsoleColor) 9999;
-		Assert.Equal(CIO.RESET, CIO.ConsoleColorToAnsiForeground(unknown));
+		Assert.Equal(ConsoleIO.RESET, ConsoleIO.ConsoleColorToAnsiForeground(unknown));
 	}
 
 	// ---------- ConsoleColorToAnsiBackground ----------
@@ -138,17 +138,17 @@ public class CIOTests
 	[InlineData(ConsoleColor.White, "\x1b[107m")]
 	public void ConsoleColorToAnsiBackground_MapsKnownColors(ConsoleColor color, string expected)
 	{
-		var result = CIO.ConsoleColorToAnsiBackground(color);
+		var result = ConsoleIO.ConsoleColorToAnsiBackground(color);
 		Assert.Equal(expected, result);
 	}
 
 	[Fact]
 	public void ConsoleColorToAnsiBackground_NullOrUnknown_ReturnsReset()
 	{
-		Assert.Equal(CIO.RESET, CIO.ConsoleColorToAnsiBackground(null));
+		Assert.Equal(ConsoleIO.RESET, ConsoleIO.ConsoleColorToAnsiBackground(null));
 
 		var unknown = (ConsoleColor) 9999;
-		Assert.Equal(CIO.RESET, CIO.ConsoleColorToAnsiBackground(unknown));
+		Assert.Equal(ConsoleIO.RESET, ConsoleIO.ConsoleColorToAnsiBackground(unknown));
 	}
 
 	// ---------- Color(char) ----------
@@ -160,12 +160,12 @@ public class CIOTests
 		var fg = ConsoleColor.Red;
 		var bg = ConsoleColor.Blue;
 
-		var result = CIO.Color(ch, fg, bg);
+		var result = ConsoleIO.Color(ch, fg, bg);
 
-		var expected = CIO.ConsoleColorToAnsiForeground(fg)
-									 + CIO.ConsoleColorToAnsiBackground(bg)
+		var expected = ConsoleIO.ConsoleColorToAnsiForeground(fg)
+									 + ConsoleIO.ConsoleColorToAnsiBackground(bg)
 									 + ch
-									 + CIO.RESET;
+									 + ConsoleIO.RESET;
 
 		Assert.Equal(expected, result);
 	}
@@ -175,9 +175,9 @@ public class CIOTests
 	{
 		char ch = 'Z';
 
-		var result = CIO.Color(ch, null, null);
+		var result = ConsoleIO.Color(ch, null, null);
 
-		var expected = CIO.RESET + CIO.RESET + ch + CIO.RESET;
+		var expected = ConsoleIO.RESET + ConsoleIO.RESET + ch + ConsoleIO.RESET;
 		Assert.Equal(expected, result);
 	}
 
@@ -190,12 +190,12 @@ public class CIOTests
 		var fg = ConsoleColor.Green;
 		var bg = ConsoleColor.Black;
 
-		var result = CIO.Color(text, fg, bg);
+		var result = ConsoleIO.Color(text, fg, bg);
 
-		var expected = CIO.ConsoleColorToAnsiForeground(fg)
-									 + CIO.ConsoleColorToAnsiBackground(bg)
+		var expected = ConsoleIO.ConsoleColorToAnsiForeground(fg)
+									 + ConsoleIO.ConsoleColorToAnsiBackground(bg)
 									 + text
-									 + CIO.RESET;
+									 + ConsoleIO.RESET;
 
 		Assert.Equal(expected, result);
 	}
@@ -205,9 +205,9 @@ public class CIOTests
 	{
 		string text = "Test";
 
-		var result = CIO.Color(text, null, null);
+		var result = ConsoleIO.Color(text, null, null);
 
-		var expected = CIO.RESET + CIO.RESET + text + CIO.RESET;
+		var expected = ConsoleIO.RESET + ConsoleIO.RESET + text + ConsoleIO.RESET;
 		Assert.Equal(expected, result);
 	}
 
@@ -223,7 +223,7 @@ public class CIOTests
 		var buffer = GetBuffer(cio);
 		string? stored = buffer[0, 0, 0];
 
-		var expected = CIO.Color('A', ConsoleColor.Black, ConsoleColor.Black);
+		var expected = ConsoleIO.Color('A', ConsoleColor.Black, ConsoleColor.Black);
 		Assert.Equal(expected, stored);
 
 		var (row, col, layer) = GetCursor(cio);
@@ -243,11 +243,11 @@ public class CIOTests
 		var buffer = GetBuffer(cio);
 
 		Assert.Equal(
-				CIO.Color('A', ConsoleColor.Black, ConsoleColor.Black),
+				ConsoleIO.Color('A', ConsoleColor.Black, ConsoleColor.Black),
 				buffer[0, 0, 0]);
 
 		Assert.Equal(
-				CIO.Color('B', ConsoleColor.Black, ConsoleColor.Black),
+				ConsoleIO.Color('B', ConsoleColor.Black, ConsoleColor.Black),
 				buffer[0, 0, 1]);
 
 		var (row, col, layer) = GetCursor(cio);
@@ -267,7 +267,7 @@ public class CIOTests
 		string? stored = buffer[1, 2, 3];
 
 		Assert.Equal(
-				CIO.Color('X', ConsoleColor.Yellow, ConsoleColor.Red),
+				ConsoleIO.Color('X', ConsoleColor.Yellow, ConsoleColor.Red),
 				stored);
 
 		var (row, col, layer) = GetCursor(cio);
@@ -287,7 +287,7 @@ public class CIOTests
 
 		Assert.Null(buffer[0, 0, 0]); // base layer untouched
 		Assert.Equal(
-				CIO.Color('L', ConsoleColor.Black, ConsoleColor.Black),
+				ConsoleIO.Color('L', ConsoleColor.Black, ConsoleColor.Black),
 				buffer[1, 0, 0]);
 	}
 
@@ -303,10 +303,10 @@ public class CIOTests
 
 		var buffer = GetBuffer(cio);
 
-		Assert.Equal(CIO.Color('A', ConsoleColor.White, ConsoleColor.Black), buffer[0, 0, 0]);
-		Assert.Equal(CIO.Color('B', ConsoleColor.White, ConsoleColor.Black), buffer[0, 0, 1]);
-		Assert.Equal(CIO.Color('C', ConsoleColor.White, ConsoleColor.Black), buffer[0, 1, 0]);
-		Assert.Equal(CIO.Color('D', ConsoleColor.White, ConsoleColor.Black), buffer[0, 1, 1]);
+		Assert.Equal(ConsoleIO.Color('A', ConsoleColor.White, ConsoleColor.Black), buffer[0, 0, 0]);
+		Assert.Equal(ConsoleIO.Color('B', ConsoleColor.White, ConsoleColor.Black), buffer[0, 0, 1]);
+		Assert.Equal(ConsoleIO.Color('C', ConsoleColor.White, ConsoleColor.Black), buffer[0, 1, 0]);
+		Assert.Equal(ConsoleIO.Color('D', ConsoleColor.White, ConsoleColor.Black), buffer[0, 1, 1]);
 	}
 
 	[Fact]
@@ -319,13 +319,13 @@ public class CIOTests
 
 		var buffer = GetBuffer(cio);
 
-		Assert.Equal(CIO.Color('A', ConsoleColor.Cyan, ConsoleColor.Black), buffer[0, 0, 0]);
-		Assert.Equal(CIO.Color('B', ConsoleColor.Cyan, ConsoleColor.Black), buffer[0, 0, 1]);
+		Assert.Equal(ConsoleIO.Color('A', ConsoleColor.Cyan, ConsoleColor.Black), buffer[0, 0, 0]);
+		Assert.Equal(ConsoleIO.Color('B', ConsoleColor.Cyan, ConsoleColor.Black), buffer[0, 0, 1]);
 
 		// According to implementation: on '\n' it increments row and resets col,
 		// then writes the '\n' character at the new position.
-		Assert.Equal(CIO.Color('\n', ConsoleColor.Cyan, ConsoleColor.Black), buffer[0, 1, 0]);
-		Assert.Equal(CIO.Color('C', ConsoleColor.Cyan, ConsoleColor.Black), buffer[0, 1, 1]);
+		Assert.Equal(ConsoleIO.Color('\n', ConsoleColor.Cyan, ConsoleColor.Black), buffer[0, 1, 0]);
+		Assert.Equal(ConsoleIO.Color('C', ConsoleColor.Cyan, ConsoleColor.Black), buffer[0, 1, 1]);
 	}
 
 	[Fact]
@@ -337,8 +337,8 @@ public class CIOTests
 
 		var buffer = GetBuffer(cio);
 
-		Assert.Equal(CIO.Color('A', ConsoleColor.Magenta, ConsoleColor.Black), buffer[0, 0, 0]);
-		Assert.Equal(CIO.Color('B', ConsoleColor.Magenta, ConsoleColor.Black), buffer[0, 0, 1]);
+		Assert.Equal(ConsoleIO.Color('A', ConsoleColor.Magenta, ConsoleColor.Black), buffer[0, 0, 0]);
+		Assert.Equal(ConsoleIO.Color('B', ConsoleColor.Magenta, ConsoleColor.Black), buffer[0, 0, 1]);
 		Assert.Null(buffer[0, 0, 2]); // nothing written for '\r'
 	}
 
@@ -356,7 +356,7 @@ public class CIOTests
 		var buffer = GetBuffer(cio);
 		var stored = buffer[0, 0, 0];
 
-		var expected = CIO.Color('X', ConsoleColor.Black, ConsoleColor.Black);
+		var expected = ConsoleIO.Color('X', ConsoleColor.Black, ConsoleColor.Black);
 		Assert.Equal(expected, stored);
 	}
 }
