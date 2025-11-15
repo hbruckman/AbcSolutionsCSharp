@@ -1,4 +1,5 @@
 using System.Reflection.PortableExecutable;
+using System.Runtime.InteropServices;
 
 namespace Abcs.Utils;
 
@@ -300,13 +301,19 @@ public class CIO
 
 		return fgc + bgc + text + "\x1b[0m";
 	}
-
 	public static void Draw()
 	{
-		Console.SetWindowSize(cols + 1, rows + 1);
-		Console.SetBufferSize(cols + 1, rows + 1);
+		// These operations are only supported on Windows; guard the call.
+
+		if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+		{
+			Console.SetWindowSize(cols + 1, rows + 1);
+			Console.SetBufferSize(cols + 1, rows + 1);
+		}
+
 		Console.Clear();
 		Draw(buffer);
+	}
 	}
 
 	private static void Draw(string[,,] buffer)
