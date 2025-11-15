@@ -314,7 +314,6 @@ public class CIO
 		Console.Clear();
 		Draw(buffer);
 	}
-	}
 
 	private static void Draw(string[,,] buffer)
 	{
