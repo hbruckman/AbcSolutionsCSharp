@@ -1,0 +1,17 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": ".NET Core Launch (Abcs)",
+			"type": "coreclr",
+			"request": "launch",
+			"program": "${workspaceFolder}/src/Abcs/bin/Debug/net9.0/Abcs.dll",
+			"cwd": "${workspaceFolder}/src/Abcs",
+			"preLaunchTask": "build Abcs",
+			"args": [],
+			"console": "externalTerminal",
+			"internalConsoleOptions": "neverOpen"
+		}
+	],
+	"compounds": []
+}

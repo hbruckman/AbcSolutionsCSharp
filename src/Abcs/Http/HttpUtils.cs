@@ -361,8 +361,6 @@ public static class HttpUtils
 		string urlPath = req.Url!.AbsolutePath.TrimStart('/');
 		string filePath = Path.Combine(rootDir, urlPath.Replace('/', Path.DirectorySeparatorChar));
 
-		Console.WriteLine(filePath);
-
 		if(File.Exists(filePath))
 		{
 			using var fs = File.OpenRead(filePath);
